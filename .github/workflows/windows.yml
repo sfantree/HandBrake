@@ -1,6 +1,7 @@
 name: Windows Build
 
-on: [push, pull_request]
+on: 
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -57,6 +58,8 @@ jobs:
       run: |
         export PATH="/home/runner/work/HandBrake/HandBrake/toolchains/mingw-w64-toolchain-10.0.0-msvcrt-linux-x86_64/mingw-w64-x86_64/bin:${PATH}"
         export PATH=/usr/bin:$PATH
+        export CFLAGS="-O0 -ggdb3"
+        export CXXFLAGS="-O0 -ggdb3"
         ./configure --cross=x86_64-w64-mingw32 --enable-qsv --enable-vce --enable-nvenc --enable-nvdec --launch-jobs=0 --launch
         cd build
         make pkg.create.zip
@@ -77,8 +80,7 @@ jobs:
     name: Windows UI
     runs-on: windows-2022
     needs: build_mingw
-    env:
-      SigningCertificate: ${{ secrets.HandBrakeTeam_SignFile }}
+    
 
     steps:
     - uses: actions/checkout@v4
@@ -89,31 +91,16 @@ jobs:
        name: LibHandBrake
        path: win/CS/HandBrakeWPF/bin/publish
 
-    - name: Import the Signing Cert
-      run: |
-        $ErrorView = "NormalView"
-        if (-NOT ($env:SigningCertificate -eq '')) {
-          $pfx_cert_byte = [System.Convert]::FromBase64String("${{ secrets.HandBrakeTeam_Pfx }}")
-          $currentDirectory = Get-Location
-          $certificatePath = Join-Path -Path $currentDirectory -ChildPath $env:SigningCertificate
-          $certPassword = ConvertTo-SecureString -String ${{ secrets.HandBrakeTeam_pfx_pwd }} -Force –AsPlainText
-          [IO.File]::WriteAllBytes("$certificatePath", $pfx_cert_byte)
-          cp $certificatePath win\cs\
-        }
 
     - name: Build Windows GUI
       run: |
         $env:Path += ";C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin"
-        msbuild win\cs\build.xml /t:x64 /p:PfxFile=$env:SigningCertificate /p:PfxPwd=${{ secrets.HandBrakeTeam_pfx_pwd }} /p:SignTimestampServer=http://time.certum.pl/
-
+        msbuild build.xml /t:x64 /p:Profile=Nightly
+        
     - name: Upload HandBrake exe Installer
       uses: actions/upload-artifact@v4
       with:
         name: HandBrake-x86_64-Win_GUI-EXE
-        path: win/CS/HandBrakeWPF/bin/publish/HandBrake-Nightly-x86_64-Win_GUI.exe
-
-    - name: Upload HandBrake msi Installer
-      uses: actions/upload-artifact@v4
-      with:
-        name:  HandBrake-x86_64-Win_GUI-MSI
-        path: win/CS/HandBrakeWPF/bin/publish/HandBrake-Nightly-x86_64-Win_GUI.msi
+        path: |
+          win/CS/HandBrakeWPF/bin/publish/*.exe
+          win/CS/HandBrakeWPF/bin/publish/*.pdb
